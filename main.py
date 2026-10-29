@@ -223,4 +223,3 @@ if st.button("우리말 뜻과 출처 저장", type="primary"):
 st.caption(
     "저장 파일: 내_기록/stroke_intro.json"
 )
-```
