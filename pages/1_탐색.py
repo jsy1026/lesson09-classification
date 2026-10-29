@@ -251,15 +251,20 @@ def make_rate_table(data, feature, feature_name):
         1: f"{feature_name} 있음",
     })
 
-    result = (
-        valid.groupby("구분")
-        .agg(
-            사람 수=("stroke", "size"),
-            뇌졸중 환자 수=("stroke", "sum"),
-            뇌졸중 비율=("stroke", "mean"),
-        )
-        .reset_index()
-    )
+  result = (
+    valid.groupby("구분")
+    .agg({
+        "stroke": ["count", "sum", "mean"]
+    })
+    .reset_index()
+)
+
+result.columns = [
+    "구분",
+    "사람 수",
+    "뇌졸중 환자 수",
+    "뇌졸중 비율",
+]
 
     result["뇌졸중 비율(%)"] = (
         result["뇌졸중 비율"] * 100
