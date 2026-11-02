@@ -203,30 +203,23 @@ with box_col2:
 
 
 # 그룹별 평균값 표
-result = (
-    valid.groupby("구분")
+mean_table = (
+    stroke_df.groupby("뇌졸중 여부")
     .agg({
-        "stroke": ["size", "sum", "mean"]
+        "stroke": "size",
+        "age": "mean",
+        "avg_glucose_level": "mean",
+    })
+    .rename(columns={
+        "stroke": "사람 수",
+        "age": "평균 나이",
+        "avg_glucose_level": "평균 혈당",
     })
     .reset_index()
 )
 
-result.columns = [
-    "구분",
-    "사람 수",
-    "뇌졸중 환자 수",
-    "뇌졸중 비율",
-]
-
-result["뇌졸중 비율(%)"] = result["뇌졸중 비율"] * 100
-
-mean_table["평균 나이"] = mean_table[
-    "평균 나이"
-].round(2)
-
-mean_table["평균 혈당"] = mean_table[
-    "평균 혈당"
-].round(2)
+mean_table["평균 나이"] = mean_table["평균 나이"].round(2)
+mean_table["평균 혈당"] = mean_table["평균 혈당"].round(2)
 
 st.subheader("그룹별 평균값")
 
