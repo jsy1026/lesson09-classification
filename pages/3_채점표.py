@@ -1,481 +1,124 @@
+# pages/3_채점표.py — 네 칸으로 세고 네 지표로 채점한다
 import pandas as pd
 import streamlit as st
-
 from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeClassifier
-from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.tree import DecisionTreeClassifier
 
+st.set_page_config(page_title="채점표", page_icon="📋", layout="wide")
+st.title("📋 채점표")
+st.write("정확도 하나로는 알 수 없던 것을 네 칸으로 세어 봅니다.")
 
-# --------------------------------------------------
-# 페이지 설정
-# --------------------------------------------------
-st.set_page_config(
-    page_title="채점표 | 뇌졸중 예측 실습실",
-    page_icon="📝",
-    layout="wide",
-)
+데이터주소 = "https://raw.githubusercontent.com/greatsong/modudata/main/data/stroke.csv"
+입력열 = ["age", "avg_glucose_level", "hypertension", "heart_disease"]
 
-st.title("📝 분류 모델 채점표")
-st.write(
-    "테스트 데이터로 두 분류 모델의 예측 결과를 채점합니다. "
-    "뇌졸중(stroke=1)을 양성, 뇌졸중 아님(stroke=0)을 음성으로 둡니다."
-)
+@st.cache_data
+def 데이터_읽기():
+    return pd.read_csv(데이터주소, encoding="utf-8").sort_values("id").reset_index(drop=True)
 
-DATA_URL = "https://raw.githubusercontent.com/jsy1026/data/refs/heads/main/stroke.csv"
+df = 데이터_읽기()
+테스트용 = pd.Series(df.index % 10 < 3, index=df.index)   # '분류 모델' 페이지와 같은 방법으로 나눈다
+X = df[입력열]
+y = df["stroke"]
 
-FEATURES = [
-    "age",
-    "avg_glucose_level",
-    "bmi",
-    "hypertension",
-    "heart_disease",
-]
+크기맞추기 = StandardScaler().fit(X[~테스트용])
+확률모델 = LogisticRegression(max_iter=2000).fit(크기맞추기.transform(X[~테스트용]), y[~테스트용])
+질문모델 = DecisionTreeClassifier(max_depth=3, min_samples_leaf=5, random_state=0).fit(X[~테스트용], y[~테스트용])
 
-FEATURE_NAMES = {
-    "age": "나이",
-    "avg_glucose_level": "평균 혈당",
-    "bmi": "체질량지수",
-    "hypertension": "고혈압 여부",
-    "heart_disease": "심장병 여부",
+많은쪽 = int(y[~테스트용].mode()[0])
+실제 = y[테스트용].to_numpy()
+예측 = {
+    "확률로 답하는 모델": (확률모델.predict_proba(크기맞추기.transform(X[테스트용]))[:, 1] >= 0.5).astype(int),
+    "질문으로 답하는 모델": 질문모델.predict(X[테스트용]),
+    "한쪽으로만 답하는 모델": pd.Series(많은쪽, index=y[테스트용].index).to_numpy(),
 }
 
-
-# --------------------------------------------------
-# 데이터 불러오기
-# --------------------------------------------------
-@st.cache_data
-def load_data():
-    df = pd.read_csv(DATA_URL, encoding="utf-8")
-
-    df = df[
-        [
-            "id",
-            "age",
-            "avg_glucose_level",
-            "bmi",
-            "hypertension",
-            "heart_disease",
-            "stroke",
-        ]
-    ].copy()
-
-    # 숫자형으로 변환
-    for col in FEATURES + ["stroke"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # 번호 순으로 정렬
-    df = df.sort_values("id").reset_index(drop=True)
-
-    return df
-
-
-try:
-    df = load_data()
-
-except Exception as error:
-    st.error(
-        "데이터를 불러오지 못했습니다. "
-        "인터넷 연결과 데이터 주소를 확인해 주세요."
-    )
-    st.caption(f"오류 내용: {error}")
-    st.stop()
-
-
-# --------------------------------------------------
-# 데이터 나누기
-# 번호 순으로 10명씩 묶고, 각 묶음의 앞 3명을 테스트용으로 고정
-# --------------------------------------------------
-df["묶음 번호"] = df.index // 10
-df["묶음 안 순서"] = df.index % 10
-
-test_df = df[df["묶음 안 순서"] < 3].copy()
-train_df = df[df["묶음 안 순서"] >= 3].copy()
-
-# BMI 결측치는 학습용 데이터의 중앙값으로 채움
-bmi_median = train_df["bmi"].median()
-
-train_df["bmi"] = train_df["bmi"].fillna(bmi_median)
-test_df["bmi"] = test_df["bmi"].fillna(bmi_median)
-
-# 입력 속성 또는 정답이 비어 있는 행 제외
-train_df = train_df.dropna(subset=FEATURES + ["stroke"])
-test_df = test_df.dropna(subset=FEATURES + ["stroke"])
-
-X_train = train_df[FEATURES]
-y_train = train_df["stroke"].astype(int)
-
-X_test = test_df[FEATURES]
-y_test = test_df["stroke"].astype(int)
-
-
-# --------------------------------------------------
-# 데이터 요약
-# --------------------------------------------------
-test_count = len(test_df)
-test_stroke_count = int((y_test == 1).sum())
-
-st.write(
-    f"**테스트용 사람 수: {test_count:,}명 | "
-    f"그중 실제 뇌졸중인 사람: {test_stroke_count:,}명**"
-)
-
-st.caption(
-    f"학습용 {len(train_df):,}명, 테스트용 {test_count:,}명입니다. "
-    f"BMI 결측치는 학습용 중앙값 {bmi_median:.1f}으로 채웠습니다."
-)
-
-
-# --------------------------------------------------
-# 두 모델 학습
-# --------------------------------------------------
-logistic_model = LogisticRegression(
-    max_iter=2000,
-    class_weight="balanced",
-    random_state=42,
-)
-
-logistic_model.fit(X_train, y_train)
-
-
-tree_model = DecisionTreeClassifier(
-    max_depth=3,
-    min_samples_leaf=5,
-    class_weight="balanced",
-    random_state=42,
-)
-
-tree_model.fit(X_train, y_train)
-
-
-# --------------------------------------------------
-# 기준 모델
-# 학습용 데이터에서 많은 쪽으로만 예측
-# --------------------------------------------------
-majority_class = int(y_train.value_counts().idxmax())
-
-baseline_train_pred = [majority_class] * len(y_train)
-baseline_test_pred = [majority_class] * len(y_test)
-
-
-# --------------------------------------------------
-# 테스트 데이터 예측
-# --------------------------------------------------
-logistic_test_pred = logistic_model.predict(X_test)
-tree_test_pred = tree_model.predict(X_test)
-
-
-# --------------------------------------------------
-# 혼동행렬 계산
-# 행: 실제 / 열: 예측
-# 순서: [[TN, FP], [FN, TP]]
-# --------------------------------------------------
-logistic_cm = confusion_matrix(
-    y_test,
-    logistic_test_pred,
-    labels=[0, 1],
-)
-
-tree_cm = confusion_matrix(
-    y_test,
-    tree_test_pred,
-    labels=[0, 1],
-)
-
-baseline_cm = confusion_matrix(
-    y_test,
-    baseline_test_pred,
-    labels=[0, 1],
-)
-
-
-# --------------------------------------------------
-# 지표 계산
-# --------------------------------------------------
-def calculate_metrics(cm):
-    tn, fp, fn, tp = cm.ravel()
-
-    total = tn + fp + fn + tp
-
-    accuracy = (
-        (tp + tn) / total
-        if total > 0
-        else None
-    )
-
-    # 재현율 = TP / 실제 뇌졸중인 사람 수
-    actual_positive = tp + fn
-
-    recall = (
-        tp / actual_positive
-        if actual_positive > 0
-        else None
-    )
-
-    # 정밀도 = TP / 뇌졸중이라고 예측한 사람 수
-    predicted_positive = tp + fp
-
-    if predicted_positive == 0:
-        precision = None
-        f1 = None
-    else:
-        precision = tp / predicted_positive
-
-        # F1 = 2 * 정밀도 * 재현율 / (정밀도 + 재현율)
-        if recall is None or precision + recall == 0:
-            f1 = 0.0
-        else:
-            f1 = (
-                2 * precision * recall
-                / (precision + recall)
-            )
-
-    return {
-        "정확도": accuracy,
-        "재현율": recall,
-        "정밀도": precision,
-        "F1": f1,
-        "TN": int(tn),
-        "FP": int(fp),
-        "FN": int(fn),
-        "TP": int(tp),
-    }
-
-
-logistic_metrics = calculate_metrics(logistic_cm)
-tree_metrics = calculate_metrics(tree_cm)
-baseline_metrics = calculate_metrics(baseline_cm)
-
-
-def format_metric(value):
-    if value is None:
-        return "계산할 수 없음"
-
-    return f"{value * 100:.2f}%"
-
-
-# --------------------------------------------------
-# 혼동행렬 표시 함수
-# --------------------------------------------------
-def show_confusion_matrix(cm, model_name):
-    tn, fp, fn, tp = cm.ravel()
-
-    matrix_table = pd.DataFrame(matrix_table = pd.DataFrame(
-    cm,
-    index=["실제 뇌졸중 아님", "실제 뇌졸중"],
-    columns=["예측 뇌졸중 아님", "예측 뇌졸중"]
-)
-
-# 숫자형 표를 문자열형으로 변환
-matrix_table = matrix_table.astype(str)
-
-matrix_table.iloc[0, 0] = f"TN: {tn:,}"
-matrix_table.iloc[0, 1] = f"FP: {fp:,}"
-matrix_table.iloc[1, 0] = f"FN: {fn:,}"
-matrix_table.iloc[1, 1] = f"TP: {tp:,}"
-    )
-
-
-# --------------------------------------------------
-# 혼동행렬
-# --------------------------------------------------
-st.subheader("1. 테스트 데이터 혼동행렬")
-
-cm_col1, cm_col2 = st.columns(2)
-
-with cm_col1:
-    show_confusion_matrix(
-        logistic_cm,
-        "로지스틱 회귀(확률로 답하는 모델)",
-    )
-
-with cm_col2:
-    show_confusion_matrix(
-        tree_cm,
-        "의사결정트리(질문으로 답하는 모델)",
-    )
-
-
-# --------------------------------------------------
-# 지표 비교표
-# --------------------------------------------------
-st.subheader("2. 모델 성능 비교")
-
-metrics_table = pd.DataFrame(
-    [
-        {
-            "모델": "로지스틱 회귀(확률로 답하는 모델)",
-            "정확도": format_metric(logistic_metrics["정확도"]),
-            "재현율": format_metric(logistic_metrics["재현율"]),
-            "정밀도": format_metric(logistic_metrics["정밀도"]),
-            "F1": format_metric(logistic_metrics["F1"]),
-        },
-        {
-            "모델": "의사결정트리(질문으로 답하는 모델)",
-            "정확도": format_metric(tree_metrics["정확도"]),
-            "재현율": format_metric(tree_metrics["재현율"]),
-            "정밀도": format_metric(tree_metrics["정밀도"]),
-            "F1": format_metric(tree_metrics["F1"]),
-        },
-        {
-            "모델": "기준 모델(훈련용에서 많은 쪽으로만 답하는 모델)",
-            "정확도": format_metric(baseline_metrics["정확도"]),
-            "재현율": format_metric(baseline_metrics["재현율"]),
-            "정밀도": format_metric(baseline_metrics["정밀도"]),
-            "F1": format_metric(baseline_metrics["F1"]),
-        },
-    ]
-)
-
-st.dataframe(
-    metrics_table,
-    use_container_width=True,
-    hide_index=True,
-)
-
-st.caption(
-    "정확도 = (TP + TN) / 전체 사람 수 · "
-    "재현율 = TP / 실제 뇌졸중인 사람 수 · "
-    "정밀도 = TP / 뇌졸중이라고 예측한 사람 수 · "
-    "F1 = 2 × 정밀도 × 재현율 / (정밀도 + 재현율)"
-)
-
-
-# --------------------------------------------------
-# 놓친 환자 / 헛짚은 사람 목록
-# --------------------------------------------------
-st.subheader("3. 모델이 놓친 환자와 헛짚은 사람")
-
-model_choice = st.selectbox(
-    "목록을 확인할 모델을 선택하세요.",
-    options=[
-        "로지스틱 회귀(확률로 답하는 모델)",
-        "의사결정트리(질문으로 답하는 모델)",
-    ],
-)
-
-if model_choice == "로지스틱 회귀(확률로 답하는 모델)":
-    selected_predictions = logistic_test_pred
-    selected_cm = logistic_cm
-else:
-    selected_predictions = tree_test_pred
-    selected_cm = tree_cm
-
-
-# 테스트 데이터에 예측 결과 붙이기
-result_df = test_df[
-    [
-        "id",
-        "age",
-        "avg_glucose_level",
-        "hypertension",
-        "heart_disease",
-        "stroke",
-    ]
-].copy()
-
-result_df["예측"] = selected_predictions
-
-# FN: 실제 뇌졸중인데 뇌졸중 아님으로 예측
-missed_patients = result_df[
-    (result_df["stroke"] == 1)
-    & (result_df["예측"] == 0)
-].copy()
-
-# FP: 실제 뇌졸중은 아닌데 뇌졸중으로 예측
-false_alarm_patients = result_df[
-    (result_df["stroke"] == 0)
-    & (result_df["예측"] == 1)
-].copy()
-
-
-def make_patient_table(data):
-    table = data[
-        [
-            "id",
-            "age",
-            "avg_glucose_level",
-            "hypertension",
-            "heart_disease",
-        ]
-    ].copy()
-
-    table = table.rename(columns={
-        "id": "번호",
-        "age": "나이",
-        "avg_glucose_level": "평균 혈당",
-        "hypertension": "고혈압 여부",
-        "heart_disease": "심장병 여부",
-    })
-
-    table["고혈압 여부"] = table["고혈압 여부"].map({
-        0: "아님",
-        1: "있음",
-    })
-
-    table["심장병 여부"] = table["심장병 여부"].map({
-        0: "아님",
-        1: "있음",
-    })
-
-    table = table.sort_values(
-        "나이",
-        ascending=False,
-    )
-
-    return table
-
-
-missed_table = make_patient_table(missed_patients)
-false_alarm_table = make_patient_table(false_alarm_patients)
-
-list_col1, list_col2 = st.columns(2)
-
-with list_col1:
-    st.markdown(
-        f"**놓친 환자: {len(missed_table):,}명**"
-    )
-    st.caption(
-        "실제 뇌졸중 환자였지만 모델이 뇌졸중 아님으로 예측한 사람(FN)"
-    )
-
-    st.dataframe(
-        missed_table.head(20),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    if len(missed_table) > 20:
-        st.caption(
-            f"전체 {len(missed_table):,}명 중 나이가 많은 앞 20명만 표시했습니다."
-        )
-
-
-with list_col2:
-    st.markdown(
-        f"**헛짚은 사람: {len(false_alarm_table):,}명**"
-    )
-    st.caption(
-        "실제 뇌졸중은 아니지만 모델이 뇌졸중이라고 예측한 사람(FP)"
-    )
-
-    st.dataframe(
-        false_alarm_table.head(20),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    if len(false_alarm_table) > 20:
-        st.caption(
-            f"전체 {len(false_alarm_table):,}명 중 나이가 많은 앞 20명만 표시했습니다."
-        )
-
-
-# --------------------------------------------------
-# 목록 수와 혼동행렬 확인
-# --------------------------------------------------
-tn, fp, fn, tp = selected_cm.ravel()
-
-st.info(
-    f"놓친 환자 목록은 혼동행렬의 FN과 같은 **{fn:,}명**이고, "
-    f"헛짚은 사람 목록은 FP와 같은 **{fp:,}명**입니다."
-)
+st.info(f"테스트용은 {len(실제):,}명이고 그중 실제 뇌졸중은 {int(실제.sum()):,}명입니다.")
+
+def 네칸(예측값):
+    """행은 실제, 열은 예측. 네 칸의 사람 수를 센다."""
+    TP = int(((실제 == 1) & (예측값 == 1)).sum())        # 뇌졸중을 뇌졸중이라 맞힌 사람 (찾아낸 환자)
+    FN = int(((실제 == 1) & (예측값 == 0)).sum())        # 뇌졸중을 아니라고 놓친 사람 (놓친 환자)
+    FP = int(((실제 == 0) & (예측값 == 1)).sum())        # 아닌데 뇌졸중이라 헛짚은 사람
+    TN = int(((실제 == 0) & (예측값 == 0)).sum())        # 아닌 사람을 아니라고 맞힌 사람
+    return TP, FN, FP, TN
+
+def 혼동행렬표(TP, FN, FP, TN):
+    표 = pd.DataFrame(
+        [[f"{TP}명 (TP)", f"{FN}명 (FN)", f"{TP + FN}명"],
+         [f"{FP}명 (FP)", f"{TN}명 (TN)", f"{FP + TN}명"],
+         [f"{TP + FP}명", f"{FN + TN}명", f"{TP + FN + FP + TN}명"]],
+        index=["실제 뇌졸중", "실제 아님", "열 합계"],
+        columns=["뇌졸중이라 예측", "아니라고 예측", "행 합계"])
+    표.index.name = "행 = 실제 · 열 = 예측"
+    return 표
+
+def 지표(TP, FN, FP, TN):
+    """네 칸에서 네 지표를 구한다. 분모가 0이면 None을 돌려준다."""
+    정확도 = (TP + TN) / (TP + FN + FP + TN)
+    정밀도 = TP / (TP + FP) if (TP + FP) > 0 else None   # 분모는 뇌졸중이라 예측한 사람 수
+    재현율 = TP / (TP + FN) if (TP + FN) > 0 else None   # 분모는 실제 뇌졸중인 사람 수
+    # F1은 정밀도와 재현율로만 구한다. 둘 중 하나라도 없거나 합이 0이면 구할 수 없다
+    F1 = (2 * 정밀도 * 재현율 / (정밀도 + 재현율)
+          if 정밀도 is not None and 재현율 is not None and (정밀도 + 재현율) > 0 else None)
+    return 정확도, 정밀도, 재현율, F1
+
+정식이름 = {"확률로 답하는 모델": "로지스틱 회귀", "질문으로 답하는 모델": "의사결정트리"}
+
+def 병기(이름):
+    """교과서의 정식 이름을 앞에 두고 교재에서 쓰는 이름을 괄호로 붙인다."""
+    return f"{정식이름[이름]}({이름})" if 이름 in 정식이름 else 이름
+
+def 소수(값):
+    return "계산할 수 없음" if 값 is None else f"{값:.4f}"
+
+네칸값 = {이름: 네칸(예측값) for 이름, 예측값 in 예측.items()}
+
+st.subheader("혼동행렬 · 네 칸으로 세기")
+왼쪽, 오른쪽 = st.columns(2)
+for 자리, 이름 in ((왼쪽, "확률로 답하는 모델"), (오른쪽, "질문으로 답하는 모델")):
+    with 자리:
+        st.markdown(f"**{병기(이름)}**")
+        st.table(혼동행렬표(*네칸값[이름]))
+st.caption("TP는 찾아낸 환자, FN은 놓친 환자, FP는 헛짚은 사람, TN은 아닌 사람을 아니라고 맞힌 사람입니다.")
+
+st.subheader("네 칸에서 구한 네 지표")
+줄 = []
+for 이름 in 예측:
+    TP, FN, FP, TN = 네칸값[이름]
+    정확도, 정밀도, 재현율, F1 = 지표(TP, FN, FP, TN)
+    줄.append({"모델": 이름, "TP (찾아낸 환자)": TP, "FP (헛짚은 사람)": FP,
+               "FN (놓친 환자)": FN, "TN": TN, "정확도": 소수(정확도),
+               "재현율": 소수(재현율), "정밀도": 소수(정밀도), "F1": 소수(F1)})
+st.dataframe(pd.DataFrame(줄), width="stretch", hide_index=True)
+st.caption("정확도의 분모는 테스트용 전체 인원, 재현율의 분모는 실제 뇌졸중인 사람 수, "
+           "정밀도의 분모는 뇌졸중이라 예측한 사람 수입니다. F1은 2 × 정밀도 × 재현율 ÷ (정밀도 + 재현율)로 구합니다. "
+           "뇌졸중이라 예측한 사람이 0명이면 정밀도와 F1을 계산할 수 없습니다.")
+
+st.subheader("누구를 놓쳤고 누구를 헛짚었는가")
+고른모델 = st.radio("어느 모델의 목록을 볼까요", list(예측), horizontal=True, format_func=병기)
+TP, FN, FP, TN = 네칸값[고른모델]
+예측값 = 예측[고른모델]
+채점명단 = df[테스트용].copy()
+채점명단["고혈압"] = 채점명단["hypertension"].map({1: "있음", 0: "없음"})
+채점명단["심장병"] = 채점명단["heart_disease"].map({1: "있음", 0: "없음"})
+보일열 = {"id": "번호", "age": "나이", "avg_glucose_level": "평균 혈당",
+          "고혈압": "고혈압", "심장병": "심장병"}
+
+def 목록(뽑을자리):
+    골라낸 = 채점명단[뽑을자리].sort_values("age", ascending=False)
+    return 골라낸[list(보일열)].rename(columns=보일열)
+
+놓친환자 = 목록((실제 == 1) & (예측값 == 0))
+헛짚은사람 = 목록((실제 == 0) & (예측값 == 1))
+왼쪽, 오른쪽 = st.columns(2)
+with 왼쪽:
+    st.markdown(f"**놓친 환자 · 모두 {len(놓친환자):,}명**")
+    st.dataframe(놓친환자.head(20), width="stretch", hide_index=True)
+with 오른쪽:
+    st.markdown(f"**헛짚은 사람 · 모두 {len(헛짚은사람):,}명**")
+    st.dataframe(헛짚은사람.head(20), width="stretch", hide_index=True)
+st.caption(f"나이가 많은 순서로 앞 스무 줄까지만 보여 줍니다. "
+           f"놓친 환자 {len(놓친환자):,}명은 혼동행렬의 FN 칸과 같고, "
+           f"헛짚은 사람 {len(헛짚은사람):,}명은 FP 칸과 같습니다.")
+st.caption("이 목록에 있는 것은 번호뿐입니다. 누구인지 알 수 없고, 알 수 있어서도 안 됩니다.")
