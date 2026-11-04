@@ -259,41 +259,19 @@ def format_metric(value):
 def show_confusion_matrix(cm, model_name):
     tn, fp, fn, tp = cm.ravel()
 
-    matrix_table = pd.DataFrame(
-        [
-            [tn, fp, tn + fp],
-            [fn, tp, fn + tp],
-            [tn + fn, fp + tp, tn + fp + fn + tp],
-        ],
-        index=[
-            "실제: 뇌졸중 아님",
-            "실제: 뇌졸중",
-            "열 합계",
-        ],
-        columns=[
-            "예측: 뇌졸중 아님",
-            "예측: 뇌졸중",
-            "행 합계",
-        ],
-    )
+    matrix_table = pd.DataFrame(matrix_table = pd.DataFrame(
+    cm,
+    index=["실제 뇌졸중 아님", "실제 뇌졸중"],
+    columns=["예측 뇌졸중 아님", "예측 뇌졸중"]
+)
 
-    # 각 칸에 TP·FP·FN·TN 약자 표시
-    matrix_table.iloc[0, 0] = f"TN: {tn:,}"
-    matrix_table.iloc[0, 1] = f"FP: {fp:,}"
-    matrix_table.iloc[1, 0] = f"FN: {fn:,}"
-    matrix_table.iloc[1, 1] = f"TP: {tp:,}"
+# 숫자형 표를 문자열형으로 변환
+matrix_table = matrix_table.astype(str)
 
-    # 합계 표시
-    matrix_table.iloc[0, 2] = f"{tn + fp:,}"
-    matrix_table.iloc[1, 2] = f"{fn + tp:,}"
-    matrix_table.iloc[2, 0] = f"{tn + fn:,}"
-    matrix_table.iloc[2, 1] = f"{fp + tp:,}"
-    matrix_table.iloc[2, 2] = f"{tn + fp + fn + tp:,}"
-
-    st.markdown(f"**{model_name} 혼동행렬**")
-    st.dataframe(
-        matrix_table,
-        use_container_width=True,
+matrix_table.iloc[0, 0] = f"TN: {tn:,}"
+matrix_table.iloc[0, 1] = f"FP: {fp:,}"
+matrix_table.iloc[1, 0] = f"FN: {fn:,}"
+matrix_table.iloc[1, 1] = f"TP: {tp:,}"
     )
 
 
